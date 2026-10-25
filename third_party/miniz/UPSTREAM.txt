@@ -1,0 +1,4 @@
+miniz 3.1.0, MIT licence (the full text is at the top of miniz.c), https://github.com/richgel99/miniz
+
+Unmodified. Used for unpacking mod zips from CurseForge and inflating Steam depot chunks. The writing and PNG paths are unused
+but left in place so the folder matches upstream.

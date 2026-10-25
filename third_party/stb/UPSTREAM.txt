@@ -1,0 +1,3 @@
+stb_image 2.08, public domain, http://nothings.org/stb_image.h
+
+Unmodified. Only the PNG and JPEG decoders are compiled in, see src/cf/image.cpp.

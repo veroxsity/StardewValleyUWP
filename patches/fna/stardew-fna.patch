@@ -1,0 +1,670 @@
+diff --git a/FNA.Core.csproj b/FNA.Core.csproj
+index f797a54..175ac16 100644
+--- a/FNA.Core.csproj
++++ b/FNA.Core.csproj
+@@ -1,11 +1,11 @@
+ <Project Sdk="Microsoft.NET.Sdk">
+ 	<PropertyGroup>
+-		<TargetFrameworks>net8.0</TargetFrameworks>
++		<TargetFrameworks>net6.0</TargetFrameworks>
+ 		<Platforms>AnyCPU</Platforms>
+ 	</PropertyGroup>
+ 	<PropertyGroup>
+ 		<EnableDefaultItems>false</EnableDefaultItems>
+-		<AssemblyName>FNA</AssemblyName>
++		<AssemblyName>MonoGame.Framework</AssemblyName>
+ 		<RootNamespace>Microsoft.Xna.Framework</RootNamespace>
+ 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+ 		<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+diff --git a/src/Audio/AudioCategory.cs b/src/Audio/AudioCategory.cs
+index 87d24bc..001aa3e 100644
+--- a/src/Audio/AudioCategory.cs
++++ b/src/Audio/AudioCategory.cs
+@@ -14,7 +14,7 @@ using System;
+ namespace Microsoft.Xna.Framework.Audio
+ {
+ 	// http://msdn.microsoft.com/en-us/library/microsoft.xna.framework.audio.audiocategory.aspx
+-	public struct AudioCategory : IEquatable<AudioCategory>
++	public sealed class AudioCategory
+ 	{
+ 		#region Public Properties
+ 
+@@ -113,7 +113,7 @@ namespace Microsoft.Xna.Framework.Audio
+ 
+ 		public bool Equals(AudioCategory other)
+ 		{
+-			return (GetHashCode() == other.GetHashCode());
++			return other != null && GetHashCode() == other.GetHashCode();
+ 		}
+ 
+ 		public override bool Equals(Object obj)
+@@ -129,14 +129,14 @@ namespace Microsoft.Xna.Framework.Audio
+ 			AudioCategory value1,
+ 			AudioCategory value2
+ 		) {
+-			return value1.Equals(value2);
++			return ReferenceEquals(value1, value2) || value1?.Equals(value2) == true;
+ 		}
+ 
+ 		public static bool operator !=(
+ 			AudioCategory value1,
+ 			AudioCategory value2
+ 		) {
+-			return !(value1.Equals(value2));
++			return !(value1 == value2);
+ 		}
+ 
+ 		#endregion
+diff --git a/src/Audio/AudioEngine.cs b/src/Audio/AudioEngine.cs
+index 8280b13..dadef10 100644
+--- a/src/Audio/AudioEngine.cs
++++ b/src/Audio/AudioEngine.cs
+@@ -16,6 +16,17 @@ using System.Runtime.InteropServices;
+ 
+ namespace Microsoft.Xna.Framework.Audio
+ {
++	public sealed class ReverbSettings
++	{
++		private readonly float[] values = new float[22];
++
++		public float this[int index]
++		{
++			get => values[index];
++			set => values[index] = value;
++		}
++	}
++
+ 	// http://msdn.microsoft.com/en-us/library/dd940262.aspx
+ 	public class AudioEngine : IDisposable
+ 	{
+@@ -58,6 +69,7 @@ namespace Microsoft.Xna.Framework.Audio
+ 		#region Private Variables
+ 
+ 		private RendererDetail[] rendererDetails;
++		private readonly ReverbSettings reverbSettings = new ReverbSettings();
+ 
+ 		private readonly FAudio.FACTNotificationCallback xactNotificationFunc;
+ 		private FAudio.FACTNotificationDescription notificationDesc;
+@@ -247,6 +259,11 @@ namespace Microsoft.Xna.Framework.Audio
+ 
+ 		#region Public Methods
+ 
++		public ReverbSettings GetReverbSettings()
++		{
++			return reverbSettings;
++		}
++
+ 		public AudioCategory GetCategory(string name)
+ 		{
+ 			if (String.IsNullOrEmpty(name))
+@@ -269,6 +286,17 @@ namespace Microsoft.Xna.Framework.Audio
+ 			return new AudioCategory(this, category, name);
+ 		}
+ 
++		public int GetCategoryIndex(string name)
++		{
++			if (String.IsNullOrEmpty(name))
++			{
++				throw new ArgumentNullException("name");
++			}
++
++			ushort category = FAudio.FACTAudioEngine_GetCategory(handle, name);
++			return category == FAudio.FACTCATEGORY_INVALID ? -1 : category;
++		}
++
+ 		public float GetGlobalVariable(string name)
+ 		{
+ 			if (String.IsNullOrEmpty(name))
+diff --git a/src/Audio/Cue.cs b/src/Audio/Cue.cs
+index 19f3400..203ea56 100644
+--- a/src/Audio/Cue.cs
++++ b/src/Audio/Cue.cs
+@@ -185,6 +185,40 @@ namespace Microsoft.Xna.Framework.Audio
+ 			FAudio.FACT3DApply(ref bank.dspSettings, handle);
+ 		}
+ 
++		public float Volume
++		{
++			get
++			{
++				return GetVariable("Volume");
++			}
++			set
++			{
++				SetVariable("Volume", value);
++			}
++		}
++
++		public float Pitch
++		{
++			get
++			{
++				return GetVariable("Pitch");
++			}
++			set
++			{
++				SetVariable("Pitch", value);
++			}
++		}
++
++		// FACT exposes no way to ask whether an RPC is driving a cue variable, and Stardew only uses
++		// this to decide whether setting Pitch itself would be pointless
++		public bool IsPitchBeingControlledByRPC
++		{
++			get
++			{
++				return false;
++			}
++		}
++
+ 		public float GetVariable(string name)
+ 		{
+ 			if (String.IsNullOrEmpty(name))
+diff --git a/src/Audio/SoundBank.cs b/src/Audio/SoundBank.cs
+index 9a7b360..c747b97 100644
+--- a/src/Audio/SoundBank.cs
++++ b/src/Audio/SoundBank.cs
+@@ -157,6 +157,11 @@ namespace Microsoft.Xna.Framework.Audio
+ 
+ 		#region Public Methods
+ 
++		public bool Exists(string name)
++		{
++			return !String.IsNullOrEmpty(name) && FAudio.FACTSoundBank_GetCueIndex(handle, name) != FAudio.FACTINDEX_INVALID;
++		}
++
+ 		public Cue GetCue(string name)
+ 		{
+ 			if (String.IsNullOrEmpty(name))
+diff --git a/src/Audio/SoundEffect.cs b/src/Audio/SoundEffect.cs
+index 3df7376..6ce21f5 100644
+--- a/src/Audio/SoundEffect.cs
++++ b/src/Audio/SoundEffect.cs
+@@ -17,7 +17,7 @@ using System.Runtime.InteropServices;
+ namespace Microsoft.Xna.Framework.Audio
+ {
+ 	// http://msdn.microsoft.com/en-us/library/microsoft.xna.framework.audio.soundeffect.aspx
+-	public sealed class SoundEffect : IDisposable
++	public class SoundEffect : IDisposable
+ 	{
+ 		#region Public Properties
+ 
+diff --git a/src/Audio/WaveBank.cs b/src/Audio/WaveBank.cs
+index 5eebdfe..19f61a2 100644
+--- a/src/Audio/WaveBank.cs
++++ b/src/Audio/WaveBank.cs
+@@ -127,6 +127,11 @@ namespace Microsoft.Xna.Framework.Audio
+ 				);
+ 			}
+ 			bankData = FAudio.FAudio_fopen(safeName);
++			if (bankData == IntPtr.Zero)
++			{
++				/* FAudio dereferences this when it creates streaming wave banks. */
++				throw new IOException("Could not open streaming wave bank " + safeName);
++			}
+ 
+ 			FAudio.FACTStreamingParameters settings = new FAudio.FACTStreamingParameters();
+ 			settings.file = bankData;
+diff --git a/src/Color.cs b/src/Color.cs
+index b7cb25c..c99927c 100644
+--- a/src/Color.cs
++++ b/src/Color.cs
+@@ -1644,6 +1644,15 @@ namespace Microsoft.Xna.Framework
+ 			A = (byte) MathHelper.Clamp(alpha, Byte.MinValue, Byte.MaxValue);
+ 		}
+ 
++		public Color(byte r, byte g, byte b, byte alpha)
++		{
++			packedValue = 0;
++			R = r;
++			G = g;
++			B = b;
++			A = alpha;
++		}
++
+ 		/// <summary>
+ 		/// Constructs an RGBA color from scalars which representing red, green, blue and alpha values.
+ 		/// </summary>
+diff --git a/src/Content/ContentManager.cs b/src/Content/ContentManager.cs
+index f49b183..7037b98 100644
+--- a/src/Content/ContentManager.cs
++++ b/src/Content/ContentManager.cs
+@@ -63,6 +63,14 @@ namespace Microsoft.Xna.Framework.Content
+ 
+ 		private GraphicsDevice graphicsDevice;
+ 		private Dictionary<string, object> loadedAssets = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
++
++		public Dictionary<string, object> LoadedAssets
++		{
++			get
++			{
++				return loadedAssets;
++			}
++		}
+ 		private List<IDisposable> disposableAssets = new List<IDisposable>();
+ 		private bool disposed;
+ 
+diff --git a/src/Content/ContentTypeReaderManager.cs b/src/Content/ContentTypeReaderManager.cs
+index d2d0afb..37dbbeb 100644
+--- a/src/Content/ContentTypeReaderManager.cs
++++ b/src/Content/ContentTypeReaderManager.cs
+@@ -195,7 +195,18 @@ namespace Microsoft.Xna.Framework.Content
+ 						string readerTypeString = originalReaderTypeString;
+ 						readerTypeString = PrepareType(readerTypeString);
+ 
+-						Type l_readerType = Type.GetType(readerTypeString);
++						Type l_readerType;
++						try
++						{
++							l_readerType = Type.GetType(readerTypeString);
++						}
++						catch (Exception exception)
++						{
++							throw new ContentLoadException(
++								"Could not load ContentTypeReader Type " + originalReaderTypeString + " (" + readerTypeString + ")",
++								exception
++							);
++						}
+ 						if (l_readerType != null)
+ 						{
+ 							ContentTypeReader typeReader;
+@@ -350,14 +361,7 @@ namespace Microsoft.Xna.Framework.Content
+ 					assemblyName
+ 				)
+ 			);
+-			preparedType = preparedType.Replace(
+-				", MonoGame.Framework",
+-				string.Format(
+-					", {0}",
+-					assemblyName
+-				)
+-			);
+-			return preparedType;
++			return preparedType.Replace("mscorlib", "System.Private.CoreLib");
+ 		}
+ 
+ 		#endregion
+diff --git a/src/FNAPlatform/SDL2_FNAPlatform.cs b/src/FNAPlatform/SDL2_FNAPlatform.cs
+index 823c9e1..b12a57b 100644
+--- a/src/FNAPlatform/SDL2_FNAPlatform.cs
++++ b/src/FNAPlatform/SDL2_FNAPlatform.cs
+@@ -1232,6 +1232,7 @@ namespace Microsoft.Xna.Framework
+ 						for (int i = 0; i < chars; i += 1)
+ 						{
+ 							TextInputEXT.OnTextInput(charsBuffer[i]);
++							game.Window.OnTextInput(new TextInputEventArgs(charsBuffer[i]));
+ 						}
+ 					}
+ 				}
+@@ -1455,6 +1456,25 @@ namespace Microsoft.Xna.Framework
+ 
+ 		private static string GetBaseDirectory()
+ 		{
++			/* Content is not always beside the executable. On Xbox the package holds the host and
++			 * the game folder lives in LocalState, so the base path has to follow this assembly,
++			 * which ships with the game rather than with the host.
++			 */
++			try
++			{
++				string beside = System.IO.Path.GetDirectoryName(
++					typeof(SDL2_FNAPlatform).Assembly.Location
++				);
++				if (!string.IsNullOrEmpty(beside))
++				{
++					return beside + System.IO.Path.DirectorySeparatorChar;
++				}
++			}
++			catch (Exception)
++			{
++				// a bundled or in memory assembly has no location, fall through to the normal path
++			}
++
+ 			if (Environment.GetEnvironmentVariable("FNA_SDL2_FORCE_BASE_PATH") != "1")
+ 			{
+ 				// If your platform uses a CLR, you want to be in this list!
+diff --git a/src/Game.cs b/src/Game.cs
+index 348546a..8b35db4 100644
+--- a/src/Game.cs
++++ b/src/Game.cs
+@@ -238,6 +238,11 @@ namespace Microsoft.Xna.Framework
+ 
+ 		#region Public Constructor
+ 
++		public Game()
++			: this(false)
++		{
++		}
++
+ 		public Game(bool headlessMode = false)
+ 		{
+ 			AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+diff --git a/src/GameWindow.cs b/src/GameWindow.cs
+index b9253c3..dee4812 100644
+--- a/src/GameWindow.cs
++++ b/src/GameWindow.cs
+@@ -16,6 +16,18 @@ using Microsoft.Xna.Framework.Input;
+ 
+ namespace Microsoft.Xna.Framework
+ {
++	public struct TextInputEventArgs
++	{
++		public readonly char Character;
++		public readonly Keys Key;
++
++		public TextInputEventArgs(char character, Keys key = Keys.None)
++		{
++			Character = character;
++			Key = key;
++		}
++	}
++
+ 	public abstract class GameWindow
+ 	{
+ 		#region Public Properties
+@@ -103,6 +115,7 @@ namespace Microsoft.Xna.Framework
+ 		public event EventHandler<EventArgs> ClientSizeChanged;
+ 		public event EventHandler<EventArgs> OrientationChanged;
+ 		public event EventHandler<EventArgs> ScreenDeviceNameChanged;
++		public event EventHandler<TextInputEventArgs> TextInput;
+ 
+ 		#endregion
+ 
+@@ -125,6 +138,21 @@ namespace Microsoft.Xna.Framework
+ 			);
+ 		}
+ 
++		public virtual int GetDisplayIndex()
++		{
++			return 0;
++		}
++
++		public virtual Rectangle GetDisplayBounds(int displayIndex)
++		{
++			return ClientBounds;
++		}
++
++		public virtual bool CenterOnDisplay(int displayIndex)
++		{
++			return displayIndex == 0;
++		}
++
+ 		#endregion
+ 
+ 		#region Protected Methods
+@@ -165,6 +193,11 @@ namespace Microsoft.Xna.Framework
+ 			}
+ 		}
+ 
++		internal void OnTextInput(TextInputEventArgs args)
++		{
++			TextInput?.Invoke(this, args);
++		}
++
+ 		protected internal abstract void SetSupportedOrientations(
+ 			DisplayOrientation orientations
+ 		);
+diff --git a/src/Graphics/GraphicsDevice.cs b/src/Graphics/GraphicsDevice.cs
+index 00d9f2b..2124b56 100644
+--- a/src/Graphics/GraphicsDevice.cs
++++ b/src/Graphics/GraphicsDevice.cs
+@@ -318,6 +318,14 @@ namespace Microsoft.Xna.Framework.Graphics
+ 
+ 		internal int renderTargetCount = 0;
+ 
++		public int RenderTargetCount
++		{
++			get
++			{
++				return renderTargetCount;
++			}
++		}
++
+ 		// Used to prevent allocs on SetRenderTarget()
+ 		private readonly RenderTargetBinding[] singleTargetCache = new RenderTargetBinding[1];
+ 
+diff --git a/src/Graphics/SpriteBatch.cs b/src/Graphics/SpriteBatch.cs
+index 465880c..a301108 100644
+--- a/src/Graphics/SpriteBatch.cs
++++ b/src/Graphics/SpriteBatch.cs
+@@ -24,6 +24,8 @@ namespace Microsoft.Xna.Framework.Graphics
+ 	 */
+ 	public class SpriteBatch : GraphicsResource
+ 	{
++		public static float TextureTuckAmount;
++
+ 		#region Private Constant Values
+ 
+ 		// As defined by the HiDef profile spec
+@@ -103,7 +105,9 @@ namespace Microsoft.Xna.Framework.Graphics
+ 		private EffectPass spriteEffectPass;
+ 
+ 		// Tracks Begin/End calls
+-		private bool beginCalled;
++		// SMAPI reflects this field by MonoGame's name every frame once a mod hooks the render events,
++		// and throws in the draw loop if it is not there. same field, MonoGame's spelling
++		private bool _beginCalled;
+ 
+ 		// Current sort mode
+ 		private SpriteSortMode sortMode;
+@@ -179,7 +183,7 @@ namespace Microsoft.Xna.Framework.Graphics
+ 			spriteMatrixTransform = spriteEffect.Parameters["MatrixTransform"].values;
+ 			spriteEffectPass = spriteEffect.CurrentTechnique.Passes[0];
+ 
+-			beginCalled = false;
++			_beginCalled = false;
+ 			numSprites = 0;
+ 			supportsNoOverwrite = FNA3D.FNA3D_SupportsNoOverwrite(
+ 				GraphicsDevice.GLDevice
+@@ -279,7 +283,7 @@ namespace Microsoft.Xna.Framework.Graphics
+ 			Effect effect,
+ 			Matrix transformMatrix
+ 		) {
+-			if (beginCalled)
++			if (_beginCalled)
+ 			{
+ 				throw new InvalidOperationException(
+ 					"Begin has been called before calling End" +
+@@ -288,7 +292,7 @@ namespace Microsoft.Xna.Framework.Graphics
+ 					" End has been successfully called."
+ 				);
+ 			}
+-			beginCalled = true;
++			_beginCalled = true;
+ 
+ 			this.sortMode = sortMode;
+ 
+@@ -306,13 +310,33 @@ namespace Microsoft.Xna.Framework.Graphics
+ 			}
+ 		}
+ 
++		public void Begin(
++			SpriteSortMode sortMode,
++			BlendState blendState,
++			SamplerState samplerState,
++			DepthStencilState depthStencilState,
++			RasterizerState rasterizerState,
++			Effect effect,
++			Matrix? transformMatrix
++		) {
++			Begin(
++				sortMode,
++				blendState,
++				samplerState,
++				depthStencilState,
++				rasterizerState,
++				effect,
++				transformMatrix ?? Matrix.Identity
++			);
++		}
++
+ 		#endregion
+ 
+ 		#region Public End Method
+ 
+ 		public void End()
+ 		{
+-			if (!beginCalled)
++			if (!_beginCalled)
+ 			{
+ 				throw new InvalidOperationException(
+ 					"End was called, but Begin has not yet" +
+@@ -320,7 +344,7 @@ namespace Microsoft.Xna.Framework.Graphics
+ 					" successfully before you can call End."
+ 				);
+ 			}
+-			beginCalled = false;
++			_beginCalled = false;
+ 
+ 			if (sortMode != SpriteSortMode.Immediate)
+ 			{
+@@ -1495,7 +1519,7 @@ namespace Microsoft.Xna.Framework.Graphics
+ 
+ 		private void CheckBegin(string method)
+ 		{
+-			if (!beginCalled)
++			if (!_beginCalled)
+ 			{
+ 				throw new InvalidOperationException(
+ 					method + " was called, but Begin has" +
+diff --git a/src/Graphics/Texture2D.cs b/src/Graphics/Texture2D.cs
+index 667dead..58152a1 100644
+--- a/src/Graphics/Texture2D.cs
++++ b/src/Graphics/Texture2D.cs
+@@ -31,6 +31,9 @@ namespace Microsoft.Xna.Framework.Graphics
+ 			private set;
+ 		}
+ 
++		public int ActualWidth => Width;
++		public int ActualHeight => Height;
++
+ 		public Rectangle Bounds
+ 		{
+ 			get
+diff --git a/src/GraphicsDeviceManager.cs b/src/GraphicsDeviceManager.cs
+index 61a3dda..628e3c6 100644
+--- a/src/GraphicsDeviceManager.cs
++++ b/src/GraphicsDeviceManager.cs
+@@ -48,6 +48,20 @@ namespace Microsoft.Xna.Framework
+ 			}
+ 		}
+ 
++		private bool INTERNAL_hardwareModeSwitch = true;
++		public bool HardwareModeSwitch
++		{
++			get
++			{
++				return INTERNAL_hardwareModeSwitch;
++			}
++			set
++			{
++				INTERNAL_hardwareModeSwitch = value;
++				prefsChanged = true;
++			}
++		}
++
+ 		private bool INTERNAL_preferMultiSampling;
+ 		public bool PreferMultiSampling
+ 		{
+diff --git a/src/MathHelper.cs b/src/MathHelper.cs
+index 50bc23c..b303889 100644
+--- a/src/MathHelper.cs
++++ b/src/MathHelper.cs
+@@ -347,7 +347,7 @@ namespace Microsoft.Xna.Framework
+ 		/// will be returned.
+ 		/// </param>
+ 		/// <returns>The clamped value.</returns>
+-		internal static int Clamp(int value, int min, int max)
++		public static int Clamp(int value, int min, int max)
+ 		{
+ 			value = (value > max) ? max : value;
+ 			value = (value < min) ? min : value;
+diff --git a/src/Properties/AssemblyInfo.cs b/src/Properties/AssemblyInfo.cs
+index 4bd9930..17d7e6f 100644
+--- a/src/Properties/AssemblyInfo.cs
++++ b/src/Properties/AssemblyInfo.cs
+@@ -39,4 +39,4 @@ using System.Resources;
+ //      Build Number
+ //      Revision
+ //
+-[assembly: AssemblyVersion("23.10.0.0")]
++[assembly: AssemblyVersion("3.8.0.1641")]
+diff --git a/src/Rectangle.cs b/src/Rectangle.cs
+index a6186ca..8eaa27f 100644
+--- a/src/Rectangle.cs
++++ b/src/Rectangle.cs
+@@ -91,6 +91,19 @@ namespace Microsoft.Xna.Framework
+ 			}
+ 		}
+ 
++		public Point Size
++		{
++			get
++			{
++				return new Point(Width, Height);
++			}
++			set
++			{
++				Width = value.X;
++				Height = value.Y;
++			}
++		}
++
+ 		/// <summary>
+ 		/// A <see cref="Point"/> located in the center of this <see cref="Rectangle"/>'s bounds.
+ 		/// </summary>
+diff --git a/src/TitleContainer.cs b/src/TitleContainer.cs
+index 8776e86..f538fb4 100644
+--- a/src/TitleContainer.cs
++++ b/src/TitleContainer.cs
+@@ -21,12 +21,15 @@
+ #region Using Statements
+ using System;
+ using System.IO;
++using System.Runtime.InteropServices;
+ #endregion
+ 
+ namespace Microsoft.Xna.Framework
+ {
+ 	public static class TitleContainer
+ 	{
++		internal static string Location => TitleLocation.Path;
++
+ 		#region Public Static Methods
+ 
+ 		public static Stream OpenStream(string name)
+@@ -75,7 +78,34 @@ namespace Microsoft.Xna.Framework
+ 			{
+ 				throw new FileNotFoundException(realName);
+ 			}
+-			return FNAPlatform.ReadFileToPointer(realName, out size);
++			IntPtr buffer = FNAPlatform.ReadFileToPointer(realName, out size);
++			if (buffer != IntPtr.Zero)
++			{
++				return buffer;
++			}
++
++			/* WinRT can return null here and FAudio dereferences the result. */
++			byte[] contents;
++			try
++			{
++				contents = File.ReadAllBytes(realName);
++			}
++			catch (Exception e)
++			{
++				throw new IOException(
++					"Could not read " + realName + ", the platform file layer returned null and the runtime could not read it either",
++					e
++				);
++			}
++
++			buffer = FNAPlatform.Malloc(contents.Length);
++			if (buffer == IntPtr.Zero)
++			{
++				throw new IOException("Out of memory reading " + realName);
++			}
++			Marshal.Copy(contents, 0, buffer, contents.Length);
++			size = (IntPtr) contents.Length;
++			return buffer;
+ 		}
+ 
+ 		#endregion

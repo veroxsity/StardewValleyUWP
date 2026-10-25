@@ -1,0 +1,139 @@
+# needs secrets SIGNING_CERTIFICATE, a base64 .pfx, and SIGNING_CERTIFICATE_PASSWORD
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Work out the version
+        id: version
+        shell: pwsh
+        run: |
+          $manifest = "packaging/Package.appxmanifest"
+          $current = ([xml](Get-Content $manifest -Raw)).Package.Identity.Version
+          # nightlies keep the manifest's first three numbers and count up by run so each installs over the last
+          $raw = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}".TrimStart("v") } else { ($current.Split(".")[0..2] -join ".") + ".${{ github.run_number }}" }
+          $parts = $raw.Split(".")
+          if ($parts.Count -lt 3 -or $parts.Count -gt 4 -or ($parts | Where-Object { $_ -notmatch '^\d+$' })) {
+            throw "version '$raw' must be three or four numbers"
+          }
+          while ($parts.Count -lt 4) { $parts += "0" }
+          $version = $parts -join "."
+          (Get-Content $manifest -Raw).Replace("Version=`"$current`" ProcessorArchitecture", "Version=`"$version`" ProcessorArchitecture") | Set-Content $manifest -NoNewline
+          "package=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Clone FNA, SDL2, FNA3D and FAudio
+        shell: pwsh
+        run: |
+          # each on the branch that holds its pinned commit, the build scripts re-clone and only see local branches
+          $sources = @(
+            @("https://github.com/tModLoader/FNA.git", "master", "FNA"),
+            @("https://github.com/libsdl-org/SDL.git", "SDL2", "SDL2"),
+            @("https://github.com/FNA-XNA/FNA3D.git", "master", "FNA3D"),
+            @("https://github.com/tModLoader/FAudio.git", "win32", "FAudio")
+          )
+          foreach ($source in $sources) {
+            git clone --branch $source[1] $source[0] "$env:RUNNER_TEMP/src/$($source[2])"
+            if ($LASTEXITCODE) { throw "cloning $($source[0]) failed" }
+          }
+
+      - name: Build FNA
+        shell: pwsh
+        run: ./packaging/build-fna.ps1 -Source "$env:RUNNER_TEMP/src/FNA" -Work "$env:RUNNER_TEMP/fna"
+
+      - name: Build SDL2, FNA3D and FAudio
+        shell: pwsh
+        run: ./packaging/build-native.ps1 -SdlSource "$env:RUNNER_TEMP/src/SDL2" -Fna3dSource "$env:RUNNER_TEMP/src/FNA3D" -FAudioSource "$env:RUNNER_TEMP/src/FAudio" -BuildRoot "$env:RUNNER_TEMP/native"
+
+      - name: Stage the package
+        shell: pwsh
+        run: ./packaging/stage-package.ps1 -MonoGameFramework "$env:RUNNER_TEMP/fna/bin/Release/net6.0/MonoGame.Framework.dll" -Work "$env:RUNNER_TEMP/stage-work" -PackageOut "$env:RUNNER_TEMP/package"
+
+      - name: Import the signing certificate
+        id: cert
+        shell: pwsh
+        env:
+          CERTIFICATE: ${{ secrets.SIGNING_CERTIFICATE }}
+          PASSWORD: ${{ secrets.SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          if (-not $env:CERTIFICATE) { throw "the SIGNING_CERTIFICATE secret is not set" }
+          $pfx = Join-Path $env:RUNNER_TEMP "signing.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERTIFICATE))
+          $secure = ConvertTo-SecureString $env:PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $secure
+          Remove-Item $pfx
+          $publisher = ([xml](Get-Content packaging/Package.appxmanifest -Raw)).Package.Identity.Publisher
+          if ($cert.Subject -ne $publisher) { throw "the certificate is $($cert.Subject) but the manifest publisher is $publisher" }
+          "thumbprint=$($cert.Thumbprint)" >> $env:GITHUB_OUTPUT
+
+      - name: Build the package
+        shell: pwsh
+        run: |
+          $stage = "$env:RUNNER_TEMP/package" -replace '\\', '/'
+          $native = "$env:RUNNER_TEMP/native" -replace '\\', '/'
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 "-DCMAKE_SYSTEM_NAME=WindowsStore" "-DCMAKE_SYSTEM_VERSION=10.0" `
+            "-DSTARDEW_UWP_PACKAGE_STAGE=$stage" "-DSTARDEW_UWP_NATIVE_BUILD=$native"
+          if ($LASTEXITCODE) { throw "configure failed" }
+          cmake --build build --config Release --target stardew_uwp_host --parallel
+          if ($LASTEXITCODE) { throw "build failed" }
+
+      - name: Sign and collect
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.package }}"
+          $folder = Get-ChildItem build/AppPackages/stardew_uwp_host -Directory -Filter "*_$($version)_x64*" | Select-Object -First 1
+          if (-not $folder) { throw "no package folder for $version" }
+          $msix = Join-Path $folder.FullName "stardew_uwp_host_$($version)_x64.msix"
+          $vclibs = Get-ChildItem $folder.FullName -Recurse -Filter "Microsoft.VCLibs.x64.14.00.appx" | Select-Object -First 1
+          if (-not (Test-Path $msix) -or -not $vclibs) { throw "the msix or its VCLibs dependency is missing" }
+          $kits = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots").KitsRoot10
+          $signtool = Get-ChildItem (Join-Path $kits "bin") -Recurse -Filter signtool.exe | Where-Object FullName -match '\\x64\\' | Sort-Object FullName -Descending | Select-Object -First 1
+          & $signtool.FullName sign /fd SHA256 /sha1 "${{ steps.cert.outputs.thumbprint }}" $msix
+          if ($LASTEXITCODE) { throw "signing failed" }
+          New-Item -ItemType Directory out | Out-Null
+          Copy-Item $msix "out/StardewValleyUWP_$($version)_x64.msix"
+          Copy-Item $vclibs.FullName out/
+          Get-ChildItem out | ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" } | Set-Content out/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StardewValleyUWP-${{ steps.version.outputs.package }}
+          path: out/
+
+      - name: Publish the release
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" (Get-ChildItem out).FullName `
+            --title "StardewValleyUWP ${{ github.ref_name }}" --notes-file CHANGELOG.md
+
+      - name: Publish the nightly
+        if: github.ref_type != 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete nightly --yes --cleanup-tag 2>$null
+          $global:LASTEXITCODE = 0
+          gh release create nightly (Get-ChildItem out).FullName --prerelease --target "${{ github.sha }}" `
+            --title "StardewValleyUWP nightly ${{ steps.version.outputs.package }}" `
+            --notes "Built from ${{ github.sha }}. Nightlies are untested builds of the latest code. Install the msix with the VCLibs appx as its dependency."

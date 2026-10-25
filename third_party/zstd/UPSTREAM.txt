@@ -1,0 +1,4 @@
+zstd v1.5.7
+commit f8745da6ff1ad1e7bab384bd1f9d742439278e99
+generated with build/single_file_libs/combine.py from the tagged source
+https://github.com/facebook/zstd

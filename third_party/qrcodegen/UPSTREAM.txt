@@ -1,0 +1,5 @@
+Nayuki QR Code generator library, C implementation
+Source: https://github.com/nayuki/QR-Code-generator
+Pinned commit: 2c9044de6b049ca25cb3cd1649ed7e27aa055138
+Files: c/qrcodegen.c, c/qrcodegen.h, Readme.markdown
+License: MIT. The complete license notice is retained in qrcodegen.c and qrcodegen.h.
