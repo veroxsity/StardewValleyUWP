@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.20.0, 2026-11-15
+
+- Fixed a lot of SMAPI mods being skipped as "no longer compatible". The FNA build was missing graphics, font, input and sound methods from the MonoGame build Stardew ships with, so any mod that called one was refused. That covers SpaceCore and everything that needs it like Json Assets, plus Stardew Valley Expanded, Sunberry Village, Lookup Anything, Unlockable Bundles, Item Extensions and AutoFish.
+- Mods that change a texture while the game is running now update it straight away instead of logging an error.
+- Tractor Mod and UI Info Suite 2 still don't load. They need Stardew's custom sound cue and streamed Ogg classes, which come next.
+
 ## 0.1.19.0, 2026-11-14
 
 First public release.

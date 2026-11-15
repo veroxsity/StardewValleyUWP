@@ -1,6 +1,6 @@
 # Patches
 
-`fna/stardew-fna.patch` applies to commit `2d16be6c66ffa9a157ff1bb50ffe215558b40394` of [tModLoader's FNA fork](https://github.com/tModLoader/FNA). It builds FNA under the name Stardew expects, `MonoGame.Framework` version `3.8.0.1641`, and adds the parts of the API that Stardew 1.6.15 uses and FNA doesn't have. It also lets the game load its content from wherever the game folder is, and handles SDL input inside a UWP app.
+`fna/stardew-fna.patch` applies to commit `2d16be6c66ffa9a157ff1bb50ffe215558b40394` of [tModLoader's FNA fork](https://github.com/tModLoader/FNA). It builds FNA under the name Stardew expects, `MonoGame.Framework` version `3.8.0.1641`, and adds the parts of the API that Stardew 1.6.15 and popular SMAPI mods use and FNA doesn't have. It also lets the game load its content from wherever the game folder is, and handles SDL input inside a UWP app.
 
 Build it with `packaging/build-fna.ps1`. The script clones that commit, checks the patch applies cleanly, applies it and writes `MonoGame.Framework.dll` into the work folder you give it.
 

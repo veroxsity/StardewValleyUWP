@@ -177,7 +177,7 @@ index 9a7b360..c747b97 100644
  		{
  			if (String.IsNullOrEmpty(name))
 diff --git a/src/Audio/SoundEffect.cs b/src/Audio/SoundEffect.cs
-index 3df7376..6ce21f5 100644
+index 3df7376..66de47e 100644
 --- a/src/Audio/SoundEffect.cs
 +++ b/src/Audio/SoundEffect.cs
 @@ -17,7 +17,7 @@ using System.Runtime.InteropServices;
@@ -189,6 +189,72 @@ index 3df7376..6ce21f5 100644
  	{
  		#region Public Properties
  
+@@ -382,6 +382,65 @@ namespace Microsoft.Xna.Framework.Audio
+ 			);
+ 		}
+ 
++		// the vorbis overload decodes the whole file up front, which is how the Stardew build treats sound effects
++		public static SoundEffect FromStream(Stream stream, bool vorbis)
++		{
++			if (!vorbis)
++			{
++				return FromStream(stream);
++			}
++
++			byte[] encoded;
++			using (MemoryStream copy = new MemoryStream())
++			{
++				stream.CopyTo(copy);
++				encoded = copy.ToArray();
++			}
++
++			GCHandle pin = GCHandle.Alloc(encoded, GCHandleType.Pinned);
++			try
++			{
++				int error;
++				IntPtr decoder = FAudio.stb_vorbis_open_memory(pin.AddrOfPinnedObject(), encoded.Length, out error, IntPtr.Zero);
++				if (decoder == IntPtr.Zero)
++				{
++					throw new InvalidOperationException("Not a readable Ogg Vorbis stream, stb_vorbis error " + error.ToString());
++				}
++
++				try
++				{
++					FAudio.stb_vorbis_info info = FAudio.stb_vorbis_get_info(decoder);
++					if (info.channels < 1 || info.channels > 2)
++					{
++						throw new NotSupportedException("SoundEffect takes mono or stereo, the stream has " + info.channels.ToString() + " channels");
++					}
++
++					int totalFloats = (int) FAudio.stb_vorbis_stream_length_in_samples(decoder) * info.channels;
++					float[] samples = new float[totalFloats];
++					int framesRead = FAudio.stb_vorbis_get_samples_float_interleaved(decoder, info.channels, samples, totalFloats);
++
++					int sampleCount = framesRead * info.channels;
++					byte[] pcm = new byte[sampleCount * 2];
++					for (int i = 0; i < sampleCount; i += 1)
++					{
++						short value = (short) (MathHelper.Clamp(samples[i], -1.0f, 1.0f) * short.MaxValue);
++						pcm[i * 2] = (byte) value;
++						pcm[(i * 2) + 1] = (byte) (value >> 8);
++					}
++
++					return new SoundEffect(pcm, (int) info.sample_rate, (AudioChannels) info.channels);
++				}
++				finally
++				{
++					FAudio.stb_vorbis_close(decoder);
++				}
++			}
++			finally
++			{
++				pin.Free();
++			}
++		}
++
+ 		public static SoundEffect FromStream(Stream stream)
+ 		{
+ 			// Sample data
 diff --git a/src/Audio/WaveBank.cs b/src/Audio/WaveBank.cs
 index 5eebdfe..19f61a2 100644
 --- a/src/Audio/WaveBank.cs
@@ -526,8 +592,77 @@ index 465880c..a301108 100644
  			{
  				throw new InvalidOperationException(
  					method + " was called, but Begin has" +
+diff --git a/src/Graphics/SpriteFont.cs b/src/Graphics/SpriteFont.cs
+index 736bcae..7355561 100644
+--- a/src/Graphics/SpriteFont.cs
++++ b/src/Graphics/SpriteFont.cs
+@@ -122,6 +122,64 @@ namespace Microsoft.Xna.Framework.Graphics
+ 
+ 		#endregion
+ 
++		#region Public Glyph Access
++
++		public struct Glyph
++		{
++			public char Character;
++			public Rectangle BoundsInTexture;
++			public Rectangle Cropping;
++			public float LeftSideBearing;
++			public float RightSideBearing;
++			public float Width;
++			public float WidthIncludingBearings;
++
++			public static readonly Glyph Empty = new Glyph();
++		}
++
++		private Glyph[] glyphs;
++
++		// the lists never change after the content reader builds the font, so the array is built once
++		public Glyph[] Glyphs
++		{
++			get
++			{
++				if (glyphs == null)
++				{
++					Glyph[] built = new Glyph[characterMap.Count];
++					for (int i = 0; i < built.Length; i += 1)
++					{
++						Vector3 bearings = kerning[i];
++						built[i] = new Glyph
++						{
++							Character = characterMap[i],
++							BoundsInTexture = glyphData[i],
++							Cropping = croppingData[i],
++							LeftSideBearing = bearings.X,
++							Width = bearings.Y,
++							RightSideBearing = bearings.Z,
++							WidthIncludingBearings = bearings.X + bearings.Y + bearings.Z
++						};
++					}
++					glyphs = built;
++				}
++				return glyphs;
++			}
++		}
++
++		public Dictionary<char, Glyph> GetGlyphs()
++		{
++			Glyph[] all = Glyphs;
++			Dictionary<char, Glyph> result = new Dictionary<char, Glyph>(all.Length);
++			foreach (Glyph glyph in all)
++			{
++				result[glyph.Character] = glyph;
++			}
++			return result;
++		}
++
++		#endregion
++
+ 		#region Public MeasureString Methods
+ 
+ 		public Vector2 MeasureString(string text)
 diff --git a/src/Graphics/Texture2D.cs b/src/Graphics/Texture2D.cs
-index 667dead..58152a1 100644
+index 667dead..bc0a115 100644
 --- a/src/Graphics/Texture2D.cs
 +++ b/src/Graphics/Texture2D.cs
 @@ -31,6 +31,9 @@ namespace Microsoft.Xna.Framework.Graphics
@@ -540,6 +675,58 @@ index 667dead..58152a1 100644
  		public Rectangle Bounds
  		{
  			get
+@@ -475,6 +478,51 @@ namespace Microsoft.Xna.Framework.Graphics
+ 			return result;
+ 		}
+ 
++		public static Texture2D FromFile(GraphicsDevice graphicsDevice, string path)
++		{
++			using (FileStream stream = File.OpenRead(path))
++			{
++				return FromStream(graphicsDevice, stream);
++			}
++		}
++
++		#endregion
++
++		#region Public Texture2D Copy Methods
++
++		// SMAPI calls this to refresh a texture in place, so every reference to the old texture sees the new pixels
++		public void CopyFromTexture(Texture2D other)
++		{
++			if (other == null)
++			{
++				throw new ArgumentNullException("other");
++			}
++			if (other.Width != Width || other.Height != Height || other.Format != Format)
++			{
++				throw new ArgumentException(
++					"CopyFromTexture needs a texture of the same size and format, got " +
++					other.Width.ToString() + "x" + other.Height.ToString() + " " + other.Format.ToString() +
++					" for " + Width.ToString() + "x" + Height.ToString() + " " + Format.ToString(),
++					"other"
++				);
++			}
++
++			int formatSize = GetFormatSize(Format);
++			bool blocks = GetBlockSizeSquared(Format) > 1;
++			int levels = Math.Min(LevelCount, other.LevelCount);
++			for (int level = 0; level < levels; level += 1)
++			{
++				int levelWidth = Math.Max(1, Width >> level);
++				int levelHeight = Math.Max(1, Height >> level);
++				int size = blocks
++					? ((levelWidth + 3) / 4) * ((levelHeight + 3) / 4) * formatSize
++					: levelWidth * levelHeight * formatSize;
++				byte[] buffer = new byte[size];
++				other.GetData(level, null, buffer, 0, size);
++				SetData(level, null, buffer, 0, size);
++			}
++		}
++
+ 		#endregion
+ 
+ 		#region Public Static Texture2D Extensions
 diff --git a/src/GraphicsDeviceManager.cs b/src/GraphicsDeviceManager.cs
 index 61a3dda..628e3c6 100644
 --- a/src/GraphicsDeviceManager.cs
@@ -565,6 +752,55 @@ index 61a3dda..628e3c6 100644
  		private bool INTERNAL_preferMultiSampling;
  		public bool PreferMultiSampling
  		{
+diff --git a/src/Input/MouseState.cs b/src/Input/MouseState.cs
+index 4f354a3..83e172d 100644
+--- a/src/Input/MouseState.cs
++++ b/src/Input/MouseState.cs
+@@ -88,6 +88,13 @@ namespace Microsoft.Xna.Framework.Input
+ 			internal set;
+ 		}
+ 
++		// FNA never feeds a horizontal wheel, so this stays 0 unless a mod builds its own state
++		public int HorizontalScrollWheelValue
++		{
++			get;
++			internal set;
++		}
++
+ 		#endregion
+ 
+ 		#region Public Constructor
+@@ -127,6 +134,20 @@ namespace Microsoft.Xna.Framework.Input
+ 			XButton2 = xButton2;
+ 		}
+ 
++		public MouseState (
++			int x,
++			int y,
++			int scrollWheel,
++			ButtonState leftButton,
++			ButtonState middleButton,
++			ButtonState rightButton,
++			ButtonState xButton1,
++			ButtonState xButton2,
++			int horizontalScrollWheel
++		) : this(x, y, scrollWheel, leftButton, middleButton, rightButton, xButton1, xButton2) {
++			HorizontalScrollWheelValue = horizontalScrollWheel;
++		}
++
+ 		#endregion
+ 
+ 		#region Public Static Operators and Override Methods
+@@ -144,7 +165,8 @@ namespace Microsoft.Xna.Framework.Input
+ 					left.LeftButton == right.LeftButton &&
+ 					left.MiddleButton == right.MiddleButton &&
+ 					left.RightButton == right.RightButton &&
+-					left.ScrollWheelValue == right.ScrollWheelValue	);
++					left.ScrollWheelValue == right.ScrollWheelValue &&
++					left.HorizontalScrollWheelValue == right.HorizontalScrollWheelValue	);
+ 		}
+ 
+ 		/// <summary>
 diff --git a/src/MathHelper.cs b/src/MathHelper.cs
 index 50bc23c..b303889 100644
 --- a/src/MathHelper.cs
@@ -578,6 +814,32 @@ index 50bc23c..b303889 100644
  		{
  			value = (value > max) ? max : value;
  			value = (value < min) ? min : value;
+diff --git a/src/Point.cs b/src/Point.cs
+index 1f1d6b8..d74f8f6 100644
+--- a/src/Point.cs
++++ b/src/Point.cs
+@@ -93,10 +93,21 @@ namespace Microsoft.Xna.Framework
+ 			this.Y = y;
+ 		}
+ 
++		public Point(int value)
++		{
++			this.X = value;
++			this.Y = value;
++		}
++
+ 		#endregion
+ 
+ 		#region Public Methods
+ 
++		public Vector2 ToVector2()
++		{
++			return new Vector2(X, Y);
++		}
++
+ 		/// <summary>
+ 		/// Compares whether current instance is equal to specified <see cref="Point"/>.
+ 		/// </summary>
 diff --git a/src/Properties/AssemblyInfo.cs b/src/Properties/AssemblyInfo.cs
 index 4bd9930..17d7e6f 100644
 --- a/src/Properties/AssemblyInfo.cs
@@ -589,7 +851,7 @@ index 4bd9930..17d7e6f 100644
 -[assembly: AssemblyVersion("23.10.0.0")]
 +[assembly: AssemblyVersion("3.8.0.1641")]
 diff --git a/src/Rectangle.cs b/src/Rectangle.cs
-index a6186ca..8eaa27f 100644
+index a6186ca..ba0f698 100644
 --- a/src/Rectangle.cs
 +++ b/src/Rectangle.cs
 @@ -91,6 +91,19 @@ namespace Microsoft.Xna.Framework
@@ -611,6 +873,43 @@ index a6186ca..8eaa27f 100644
 +
  		/// <summary>
  		/// A <see cref="Point"/> located in the center of this <see cref="Rectangle"/>'s bounds.
+ 		/// </summary>
+@@ -206,10 +219,36 @@ namespace Microsoft.Xna.Framework
+ 			Height = height;
+ 		}
+ 
++		public Rectangle(Point location, Point size)
++		{
++			X = location.X;
++			Y = location.Y;
++			Width = size.X;
++			Height = size.Y;
++		}
++
+ 		#endregion
+ 
+ 		#region Public Methods
+ 
++		public bool Contains(float x, float y)
++		{
++			return (	(this.X <= x) &&
++					(x < (this.X + this.Width)) &&
++					(this.Y <= y) &&
++					(y < (this.Y + this.Height))	);
++		}
++
++		public bool Contains(Vector2 value)
++		{
++			return Contains(value.X, value.Y);
++		}
++
++		public void Contains(ref Vector2 value, out bool result)
++		{
++			result = Contains(value.X, value.Y);
++		}
++
+ 		/// <summary>
+ 		/// Gets whether or not the provided coordinates lie within the bounds of this <see cref="Rectangle"/>.
  		/// </summary>
 diff --git a/src/TitleContainer.cs b/src/TitleContainer.cs
 index 8776e86..f538fb4 100644
@@ -668,3 +967,19 @@ index 8776e86..f538fb4 100644
  		}
  
  		#endregion
+diff --git a/src/Vector2.cs b/src/Vector2.cs
+index 733e803..55f7fb4 100644
+--- a/src/Vector2.cs
++++ b/src/Vector2.cs
+@@ -144,6 +144,11 @@ namespace Microsoft.Xna.Framework
+ 
+ 		#region Public Methods
+ 
++		public Point ToPoint()
++		{
++			return new Point((int) X, (int) Y);
++		}
++
+ 		/// <summary>
+ 		/// Compares whether current instance is equal to specified <see cref="Object"/>.
+ 		/// </summary>

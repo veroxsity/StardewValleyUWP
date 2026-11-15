@@ -92,8 +92,7 @@ If the game doesn't start, `stardew-host.log` is the first place to look.
 ## Known limitations
 
 - Built for a controller. The Xbox doesn't give this app a mouse. A USB keyboard works.
-- Tractor Mod 4.24.4 doesn't load, it needs audio classes this FNA build doesn't have.
-- Mods that edit a texture the game has already loaded may not refresh until the game restarts.
+- Tractor Mod and UI Info Suite 2 don't load. They need Stardew's custom sound cue and streamed Ogg classes, which this FNA build doesn't have yet.
 - Mod dependencies aren't installed for you. Install Content Patcher and similar requirements yourself.
 - Some CurseForge authors block downloads from other apps. Those mods can't be installed from the launcher.
 - The mod browser doesn't check installed mods for updates.
