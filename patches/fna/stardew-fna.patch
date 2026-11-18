@@ -177,7 +177,7 @@ index 9a7b360..c747b97 100644
  		{
  			if (String.IsNullOrEmpty(name))
 diff --git a/src/Audio/SoundEffect.cs b/src/Audio/SoundEffect.cs
-index 3df7376..66de47e 100644
+index 3df7376..8485bb7 100644
 --- a/src/Audio/SoundEffect.cs
 +++ b/src/Audio/SoundEffect.cs
 @@ -17,7 +17,7 @@ using System.Runtime.InteropServices;
@@ -189,7 +189,7 @@ index 3df7376..66de47e 100644
  	{
  		#region Public Properties
  
-@@ -382,6 +382,65 @@ namespace Microsoft.Xna.Framework.Audio
+@@ -382,6 +382,73 @@ namespace Microsoft.Xna.Framework.Audio
  			);
  		}
  
@@ -252,6 +252,14 @@ index 3df7376..66de47e 100644
 +			}
 +		}
 +
++		public static SoundEffect FromFile(string path)
++		{
++			using (FileStream stream = File.OpenRead(path))
++			{
++				return FromStream(stream);
++			}
++		}
++
  		public static SoundEffect FromStream(Stream stream)
  		{
  			// Sample data
@@ -272,10 +280,33 @@ index 5eebdfe..19f61a2 100644
  			FAudio.FACTStreamingParameters settings = new FAudio.FACTStreamingParameters();
  			settings.file = bankData;
 diff --git a/src/Color.cs b/src/Color.cs
-index b7cb25c..c99927c 100644
+index b7cb25c..5b2891b 100644
 --- a/src/Color.cs
 +++ b/src/Color.cs
-@@ -1644,6 +1644,15 @@ namespace Microsoft.Xna.Framework
+@@ -134,6 +134,22 @@ namespace Microsoft.Xna.Framework
+ 			private set;
+ 		}
+ 
++		public static Color TransparentBlack
++		{
++			get
++			{
++				return Transparent;
++			}
++		}
++
++		public static Color MonoGameOrange
++		{
++			get
++			{
++				return new Color(231, 60, 0, 255);
++			}
++		}
++
+ 		/// <summary>
+ 		/// AliceBlue color (R:240,G:248,B:255,A:255).
+ 		/// </summary>
+@@ -1644,6 +1660,15 @@ namespace Microsoft.Xna.Framework
  			A = (byte) MathHelper.Clamp(alpha, Byte.MinValue, Byte.MaxValue);
  		}
  
@@ -291,11 +322,114 @@ index b7cb25c..c99927c 100644
  		/// <summary>
  		/// Constructs an RGBA color from scalars which representing red, green, blue and alpha values.
  		/// </summary>
+@@ -1661,13 +1686,23 @@ namespace Microsoft.Xna.Framework
+ 			A = (byte) MathHelper.Clamp(alpha * 255, Byte.MinValue, Byte.MaxValue);
+ 		}
+ 
+-		#endregion
++		public Color(uint packedValue)
++		{
++			this.packedValue = packedValue;
++		}
+ 
+-		#region Private Constructors
++		public Color(Color color, int alpha)
++		{
++			packedValue = 0;
+ 
+-		private Color(uint packedValue)
++			R = color.R;
++			G = color.G;
++			B = color.B;
++			A = (byte) MathHelper.Clamp(alpha, Byte.MinValue, Byte.MaxValue);
++		}
++
++		public Color(Color color, float alpha) : this(color, (int) (alpha * 255))
+ 		{
+-			this.packedValue = packedValue;
+ 		}
+ 
+ 		#endregion
+@@ -1702,6 +1737,36 @@ namespace Microsoft.Xna.Framework
+ 			return new Vector4(R / 255.0f, G / 255.0f, B / 255.0f, A / 255.0f);
+ 		}
+ 
++		public void Deconstruct(out byte r, out byte g, out byte b)
++		{
++			r = R;
++			g = G;
++			b = B;
++		}
++
++		public void Deconstruct(out byte r, out byte g, out byte b, out byte a)
++		{
++			r = R;
++			g = G;
++			b = B;
++			a = A;
++		}
++
++		public void Deconstruct(out float r, out float g, out float b)
++		{
++			r = R / 255.0f;
++			g = G / 255.0f;
++			b = B / 255.0f;
++		}
++
++		public void Deconstruct(out float r, out float g, out float b, out float a)
++		{
++			r = R / 255.0f;
++			g = G / 255.0f;
++			b = B / 255.0f;
++			a = A / 255.0f;
++		}
++
+ 		#endregion
+ 
+ 		#region Public Static Methods
+@@ -1713,6 +1778,17 @@ namespace Microsoft.Xna.Framework
+ 		/// <param name="value2">Destination <see cref="Color"/>.</param>
+ 		/// <param name="amount">Interpolation factor.</param>
+ 		/// <returns>Interpolated <see cref="Color"/>.</returns>
++		public static Color LerpPrecise(Color value1, Color value2, float amount)
++		{
++			amount = MathHelper.Clamp(amount, 0.0f, 1.0f);
++			return new Color(
++				(int) MathHelper.LerpPrecise(value1.R, value2.R, amount),
++				(int) MathHelper.LerpPrecise(value1.G, value2.G, amount),
++				(int) MathHelper.LerpPrecise(value1.B, value2.B, amount),
++				(int) MathHelper.LerpPrecise(value1.A, value2.A, amount)
++			);
++		}
++
+ 		public static Color Lerp(Color value1, Color value2, float amount)
+ 		{
+ 			amount = MathHelper.Clamp(amount, 0.0f, 1.0f);
+@@ -1835,6 +1911,11 @@ namespace Microsoft.Xna.Framework
+ 		/// <param name="value">Source <see cref="Color"/>.</param>
+ 		/// <param name="scale">Multiplicator.</param>
+ 		/// <returns>Multiplication result.</returns>
++		public static Color operator *(float scale, Color value)
++		{
++			return value * scale;
++		}
++
+ 		public static Color operator *(Color value, float scale)
+ 		{
+ 			return new Color(
 diff --git a/src/Content/ContentManager.cs b/src/Content/ContentManager.cs
-index f49b183..7037b98 100644
+index f49b183..3fabffe 100644
 --- a/src/Content/ContentManager.cs
 +++ b/src/Content/ContentManager.cs
-@@ -63,6 +63,14 @@ namespace Microsoft.Xna.Framework.Content
+@@ -11,6 +11,7 @@
+ using System;
+ using System.Collections.Generic;
+ using System.Diagnostics;
++using System.Globalization;
+ using System.IO;
+ using System.Reflection;
+ 
+@@ -63,6 +64,14 @@ namespace Microsoft.Xna.Framework.Content
  
  		private GraphicsDevice graphicsDevice;
  		private Dictionary<string, object> loadedAssets = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
@@ -310,6 +444,34 @@ index f49b183..7037b98 100644
  		private List<IDisposable> disposableAssets = new List<IDisposable>();
  		private bool disposed;
  
+@@ -187,6 +196,27 @@ namespace Microsoft.Xna.Framework.Content
+ 
+ 		#region Public Methods
+ 
++		public virtual T LoadLocalized<T>(string assetName)
++		{
++			string[] cultures = new string[]
++			{
++				CultureInfo.CurrentCulture.Name,
++				CultureInfo.CurrentCulture.TwoLetterISOLanguageName
++			};
++			foreach (string culture in cultures)
++			{
++				try
++				{
++					return Load<T>(assetName + "." + culture);
++				}
++				catch (ContentLoadException)
++				{
++					// a missing translation is expected, the next culture or the plain asset is tried instead
++				}
++			}
++			return Load<T>(assetName);
++		}
++
+ 		public virtual T Load<T>(string assetName)
+ 		{
+ 			if (string.IsNullOrEmpty(assetName))
 diff --git a/src/Content/ContentTypeReaderManager.cs b/src/Content/ContentTypeReaderManager.cs
 index d2d0afb..37dbbeb 100644
 --- a/src/Content/ContentTypeReaderManager.cs
@@ -404,6 +566,33 @@ index 348546a..8b35db4 100644
  		public Game(bool headlessMode = false)
  		{
  			AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+diff --git a/src/GameTime.cs b/src/GameTime.cs
+index 5011a7c..97783ca 100644
+--- a/src/GameTime.cs
++++ b/src/GameTime.cs
+@@ -20,19 +20,19 @@ namespace Microsoft.Xna.Framework
+ 		public TimeSpan TotalGameTime
+ 		{
+ 			get;
+-			internal set;
++			set;
+ 		}
+ 
+ 		public TimeSpan ElapsedGameTime
+ 		{
+ 			get;
+-			internal set;
++			set;
+ 		}
+ 
+ 		public bool IsRunningSlowly
+ 		{
+ 			get;
+-			internal set;
++			set;
+ 		}
+ 
+ 		#endregion
 diff --git a/src/GameWindow.cs b/src/GameWindow.cs
 index b9253c3..dee4812 100644
 --- a/src/GameWindow.cs
@@ -593,10 +782,19 @@ index 465880c..a301108 100644
  				throw new InvalidOperationException(
  					method + " was called, but Begin has" +
 diff --git a/src/Graphics/SpriteFont.cs b/src/Graphics/SpriteFont.cs
-index 736bcae..7355561 100644
+index 736bcae..369416b 100644
 --- a/src/Graphics/SpriteFont.cs
 +++ b/src/Graphics/SpriteFont.cs
-@@ -122,6 +122,64 @@ namespace Microsoft.Xna.Framework.Graphics
+@@ -92,7 +92,7 @@ namespace Microsoft.Xna.Framework.Graphics
+ 
+ 		#region Internal Constructor
+ 
+-		internal SpriteFont(
++		public SpriteFont(
+ 			Texture2D texture,
+ 			List<Rectangle> glyphBounds,
+ 			List<Rectangle> cropping,
+@@ -122,6 +122,72 @@ namespace Microsoft.Xna.Framework.Graphics
  
  		#endregion
  
@@ -613,6 +811,14 @@ index 736bcae..7355561 100644
 +			public float WidthIncludingBearings;
 +
 +			public static readonly Glyph Empty = new Glyph();
++		}
++
++		public Texture2D Texture
++		{
++			get
++			{
++				return textureValue;
++			}
 +		}
 +
 +		private Glyph[] glyphs;
@@ -662,7 +868,7 @@ index 736bcae..7355561 100644
  
  		public Vector2 MeasureString(string text)
 diff --git a/src/Graphics/Texture2D.cs b/src/Graphics/Texture2D.cs
-index 667dead..bc0a115 100644
+index 667dead..6c1e3a8 100644
 --- a/src/Graphics/Texture2D.cs
 +++ b/src/Graphics/Texture2D.cs
 @@ -31,6 +31,9 @@ namespace Microsoft.Xna.Framework.Graphics
@@ -675,7 +881,84 @@ index 667dead..bc0a115 100644
  		public Rectangle Bounds
  		{
  			get
-@@ -475,6 +478,51 @@ namespace Microsoft.Xna.Framework.Graphics
+@@ -56,6 +59,32 @@ namespace Microsoft.Xna.Framework.Graphics
+ 		) {
+ 		}
+ 
++		public Texture2D(
++			GraphicsDevice graphicsDevice,
++			int width,
++			int height,
++			bool mipMap,
++			SurfaceFormat format,
++			int arraySize
++		) : this(
++			graphicsDevice,
++			width,
++			height,
++			mipMap,
++			SingleSliceFormat(format, arraySize)
++		) {
++		}
++
++		// checked before the base constructor runs, so a bad size never allocates a texture
++		private static SurfaceFormat SingleSliceFormat(SurfaceFormat format, int arraySize)
++		{
++			if (arraySize != 1)
++			{
++				throw new NotSupportedException("FNA has no texture arrays, arraySize has to be 1");
++			}
++			return format;
++		}
++
+ 		public Texture2D(
+ 			GraphicsDevice graphicsDevice,
+ 			int width,
+@@ -152,6 +181,21 @@ namespace Microsoft.Xna.Framework.Graphics
+ 			);
+ 		}
+ 
++		public void SetData<T>(
++			int level,
++			int arraySlice,
++			Rectangle? rect,
++			T[] data,
++			int startIndex,
++			int elementCount
++		) where T : struct {
++			if (arraySlice != 0)
++			{
++				throw new ArgumentOutOfRangeException("arraySlice", "a Texture2D has one array slice");
++			}
++			SetData(level, rect, data, startIndex, elementCount);
++		}
++
+ 		public void SetData<T>(
+ 			int level,
+ 			Rectangle? rect,
+@@ -279,6 +323,21 @@ namespace Microsoft.Xna.Framework.Graphics
+ 			);
+ 		}
+ 
++		public void GetData<T>(
++			int level,
++			int arraySlice,
++			Rectangle? rect,
++			T[] data,
++			int startIndex,
++			int elementCount
++		) where T : struct {
++			if (arraySlice != 0)
++			{
++				throw new ArgumentOutOfRangeException("arraySlice", "a Texture2D has one array slice");
++			}
++			GetData(level, rect, data, startIndex, elementCount);
++		}
++
+ 		public void GetData<T>(
+ 			int level,
+ 			Rectangle? rect,
+@@ -475,6 +534,51 @@ namespace Microsoft.Xna.Framework.Graphics
  			return result;
  		}
  
@@ -727,6 +1010,27 @@ index 667dead..bc0a115 100644
  		#endregion
  
  		#region Public Static Texture2D Extensions
+diff --git a/src/Graphics/Viewport.cs b/src/Graphics/Viewport.cs
+index cd438f5..52f7e47 100644
+--- a/src/Graphics/Viewport.cs
++++ b/src/Graphics/Viewport.cs
+@@ -189,6 +189,16 @@ namespace Microsoft.Xna.Framework.Graphics
+ 			viewport.maxDepth = 1.0f;
+ 		}
+ 
++		public Viewport(int x, int y, int width, int height, float minDepth, float maxDepth)
++		{
++			viewport.x = x;
++			viewport.y = y;
++			viewport.w = width;
++			viewport.h = height;
++			viewport.minDepth = minDepth;
++			viewport.maxDepth = maxDepth;
++		}
++
+ 		/// <summary>
+ 		/// Constructs a viewport from the given values.
+ 		/// </summary>
 diff --git a/src/GraphicsDeviceManager.cs b/src/GraphicsDeviceManager.cs
 index 61a3dda..628e3c6 100644
 --- a/src/GraphicsDeviceManager.cs
@@ -752,14 +1056,240 @@ index 61a3dda..628e3c6 100644
  		private bool INTERNAL_preferMultiSampling;
  		public bool PreferMultiSampling
  		{
+diff --git a/src/Input/GamePad.cs b/src/Input/GamePad.cs
+index e2a3a9e..68859fb 100644
+--- a/src/Input/GamePad.cs
++++ b/src/Input/GamePad.cs
+@@ -86,6 +86,46 @@ namespace Microsoft.Xna.Framework.Input
+ 			);
+ 		}
+ 
++		public static int MaximumGamePadCount
++		{
++			get
++			{
++				return 4;
++			}
++		}
++
++		public static GamePadCapabilities GetCapabilities(int index)
++		{
++			return GetCapabilities((PlayerIndex) index);
++		}
++
++		public static GamePadState GetState(int index)
++		{
++			return GetState((PlayerIndex) index);
++		}
++
++		public static GamePadState GetState(int index, GamePadDeadZone deadZoneMode)
++		{
++			return GetState((PlayerIndex) index, deadZoneMode);
++		}
++
++		public static bool SetVibration(int index, float leftMotor, float rightMotor)
++		{
++			return SetVibration((PlayerIndex) index, leftMotor, rightMotor);
++		}
++
++		public static bool SetVibration(PlayerIndex playerIndex, float leftMotor, float rightMotor, float leftTrigger, float rightTrigger)
++		{
++			bool motors = SetVibration(playerIndex, leftMotor, rightMotor);
++			bool triggers = SetTriggerVibrationEXT(playerIndex, leftTrigger, rightTrigger);
++			return motors && triggers;
++		}
++
++		public static bool SetVibration(int index, float leftMotor, float rightMotor, float leftTrigger, float rightTrigger)
++		{
++			return SetVibration((PlayerIndex) index, leftMotor, rightMotor, leftTrigger, rightTrigger);
++		}
++
+ 		#endregion
+ 
+ 		#region Public GamePad API, FNA Extensions
+diff --git a/src/Input/GamePadState.cs b/src/Input/GamePadState.cs
+index 4960cd5..42091d9 100644
+--- a/src/Input/GamePadState.cs
++++ b/src/Input/GamePadState.cs
+@@ -7,6 +7,11 @@
+  */
+ #endregion
+ 
++#region Using Statements
++using System;
++using System.Collections.Generic;
++#endregion
++
+ namespace Microsoft.Xna.Framework.Input
+ {
+ 	/// <summary>
+@@ -157,6 +162,31 @@ namespace Microsoft.Xna.Framework.Input
+ 		) {
+ 		}
+ 
++		public GamePadState(
++			Vector2 leftThumbStick,
++			Vector2 rightThumbStick,
++			float leftTrigger,
++			float rightTrigger,
++			Buttons button
++		) : this(leftThumbStick, rightThumbStick, leftTrigger, rightTrigger, SplitButtons(button)) {
++		}
++
++		public static readonly GamePadState Default = new GamePadState();
++
++		// MonoGame takes combined flags here, the d-pad reader expects one entry per button
++		private static Buttons[] SplitButtons(Buttons combined)
++		{
++			List<Buttons> split = new List<Buttons>();
++			foreach (Buttons single in Enum.GetValues(typeof(Buttons)))
++			{
++				if (single != 0 && (combined & single) == single)
++				{
++					split.Add(single);
++				}
++			}
++			return split.ToArray();
++		}
++
+ 		#endregion
+ 
+ 		#region Public Methods
+diff --git a/src/Input/KeyboardState.cs b/src/Input/KeyboardState.cs
+index 46a56c5..fc19e35 100644
+--- a/src/Input/KeyboardState.cs
++++ b/src/Input/KeyboardState.cs
+@@ -8,6 +8,7 @@
+ #endregion
+ 
+ #region Using Statements
++using System;
+ using System.Collections.Generic;
+ #endregion
+ 
+@@ -39,6 +40,7 @@ namespace Microsoft.Xna.Framework.Input
+ 
+ 		// Array of 256 bits:
+ 		uint keys0, keys1, keys2, keys3, keys4, keys5, keys6, keys7;
++		bool capsLock, numLock;
+ 
+ 		#endregion
+ 
+@@ -65,6 +67,8 @@ namespace Microsoft.Xna.Framework.Input
+ 			keys5 = 0;
+ 			keys6 = 0;
+ 			keys7 = 0;
++			capsLock = false;
++			numLock = false;
+ 
+ 			if (keys != null)
+ 			{
+@@ -75,6 +79,12 @@ namespace Microsoft.Xna.Framework.Input
+ 			}
+ 		}
+ 
++		public KeyboardState(Keys[] keys, bool capsLock = false, bool numLock = false) : this(keys)
++		{
++			this.capsLock = capsLock;
++			this.numLock = numLock;
++		}
++
+ 		#endregion
+ 
+ 		#region Internal Constructor
+@@ -93,6 +103,8 @@ namespace Microsoft.Xna.Framework.Input
+ 			keys5 = 0;
+ 			keys6 = 0;
+ 			keys7 = 0;
++			capsLock = false;
++			numLock = false;
+ 
+ 			if (keys != null)
+ 			{
+@@ -131,6 +143,51 @@ namespace Microsoft.Xna.Framework.Input
+ 		/// Returns an array of values holding keys that are currently being pressed.
+ 		/// </summary>
+ 		/// <returns>The keys that are currently being pressed.</returns>
++		// FNA does not track lock keys, so these only report what a constructed state was given
++		public bool CapsLock
++		{
++			get
++			{
++				return capsLock;
++			}
++		}
++
++		public bool NumLock
++		{
++			get
++			{
++				return numLock;
++			}
++		}
++
++		public int GetPressedKeyCount()
++		{
++			return (int) (
++				CountBits(keys0) +
++				CountBits(keys1) +
++				CountBits(keys2) +
++				CountBits(keys3) +
++				CountBits(keys4) +
++				CountBits(keys5) +
++				CountBits(keys6) +
++				CountBits(keys7)
++			);
++		}
++
++		public void GetPressedKeys(Keys[] keys)
++		{
++			if (keys == null)
++			{
++				throw new ArgumentNullException("keys");
++			}
++			Keys[] pressed = GetPressedKeys();
++			if (keys.Length < pressed.Length)
++			{
++				throw new ArgumentOutOfRangeException("keys", "the array is smaller than the number of pressed keys");
++			}
++			Array.Copy(pressed, keys, pressed.Length);
++		}
++
+ 		public Keys[] GetPressedKeys()
+ 		{
+ 			uint count = (
+diff --git a/src/Input/Mouse.cs b/src/Input/Mouse.cs
+index 5a9a69b..c6f92ed 100644
+--- a/src/Input/Mouse.cs
++++ b/src/Input/Mouse.cs
+@@ -64,6 +64,11 @@ namespace Microsoft.Xna.Framework.Input
+ 		/// presses for the provided window
+ 		/// </summary>
+ 		/// <returns>Current state of the mouse.</returns>
++		public static MouseState GetState(GameWindow window)
++		{
++			return GetState();
++		}
++
+ 		public static MouseState GetState()
+ 		{
+ 			int x, y;
 diff --git a/src/Input/MouseState.cs b/src/Input/MouseState.cs
-index 4f354a3..83e172d 100644
+index 4f354a3..7ae9e41 100644
 --- a/src/Input/MouseState.cs
 +++ b/src/Input/MouseState.cs
-@@ -88,6 +88,13 @@ namespace Microsoft.Xna.Framework.Input
+@@ -88,6 +88,21 @@ namespace Microsoft.Xna.Framework.Input
  			internal set;
  		}
  
++		public Point Position
++		{
++			get
++			{
++				return new Point(X, Y);
++			}
++		}
++
 +		// FNA never feeds a horizontal wheel, so this stays 0 unless a mod builds its own state
 +		public int HorizontalScrollWheelValue
 +		{
@@ -770,7 +1300,7 @@ index 4f354a3..83e172d 100644
  		#endregion
  
  		#region Public Constructor
-@@ -127,6 +134,20 @@ namespace Microsoft.Xna.Framework.Input
+@@ -127,6 +142,20 @@ namespace Microsoft.Xna.Framework.Input
  			XButton2 = xButton2;
  		}
  
@@ -791,7 +1321,7 @@ index 4f354a3..83e172d 100644
  		#endregion
  
  		#region Public Static Operators and Override Methods
-@@ -144,7 +165,8 @@ namespace Microsoft.Xna.Framework.Input
+@@ -144,7 +173,8 @@ namespace Microsoft.Xna.Framework.Input
  					left.LeftButton == right.LeftButton &&
  					left.MiddleButton == right.MiddleButton &&
  					left.RightButton == right.RightButton &&
@@ -802,10 +1332,46 @@ index 4f354a3..83e172d 100644
  
  		/// <summary>
 diff --git a/src/MathHelper.cs b/src/MathHelper.cs
-index 50bc23c..b303889 100644
+index 50bc23c..960fca9 100644
 --- a/src/MathHelper.cs
 +++ b/src/MathHelper.cs
-@@ -347,7 +347,7 @@ namespace Microsoft.Xna.Framework
+@@ -59,6 +59,8 @@ namespace Microsoft.Xna.Framework
+ 		/// </summary>
+ 		public const float TwoPi = (float) (Math.PI * 2.0);
+ 
++		public const float Tau = TwoPi;
++
+ 		#endregion
+ 
+ 		#region Internal Static Readonly Fields
+@@ -237,6 +239,26 @@ namespace Microsoft.Xna.Framework
+ 			return value1 + (value2 - value1) * amount;
+ 		}
+ 
++		public static float LerpPrecise(float value1, float value2, float amount)
++		{
++			return ((1 - amount) * value1) + (value2 * amount);
++		}
++
++		public static int Max(int value1, int value2)
++		{
++			return value1 > value2 ? value1 : value2;
++		}
++
++		public static int Min(int value1, int value2)
++		{
++			return value1 < value2 ? value1 : value2;
++		}
++
++		public static bool IsPowerOfTwo(int value)
++		{
++			return (value > 0) && ((value & (value - 1)) == 0);
++		}
++
+ 		/// <summary>
+ 		/// Returns the greater of two values.
+ 		/// </summary>
+@@ -347,7 +369,7 @@ namespace Microsoft.Xna.Framework
  		/// will be returned.
  		/// </param>
  		/// <returns>The clamped value.</returns>
@@ -814,11 +1380,108 @@ index 50bc23c..b303889 100644
  		{
  			value = (value > max) ? max : value;
  			value = (value < min) ? min : value;
+diff --git a/src/Matrix.cs b/src/Matrix.cs
+index 6eb00bf..c510fcf 100644
+--- a/src/Matrix.cs
++++ b/src/Matrix.cs
+@@ -332,6 +332,92 @@ namespace Microsoft.Xna.Framework
+ 			M44 = m44;
+ 		}
+ 
++		public Matrix(Vector4 row1, Vector4 row2, Vector4 row3, Vector4 row4)
++			: this(
++				row1.X, row1.Y, row1.Z, row1.W,
++				row2.X, row2.Y, row2.Z, row2.W,
++				row3.X, row3.Y, row3.Z, row3.W,
++				row4.X, row4.Y, row4.Z, row4.W
++			) {
++		}
++
++		public float this[int index]
++		{
++			get
++			{
++				switch (index)
++				{
++					case 0: return M11;
++					case 1: return M12;
++					case 2: return M13;
++					case 3: return M14;
++					case 4: return M21;
++					case 5: return M22;
++					case 6: return M23;
++					case 7: return M24;
++					case 8: return M31;
++					case 9: return M32;
++					case 10: return M33;
++					case 11: return M34;
++					case 12: return M41;
++					case 13: return M42;
++					case 14: return M43;
++					case 15: return M44;
++					default: throw new ArgumentOutOfRangeException("index");
++				}
++			}
++			set
++			{
++				switch (index)
++				{
++					case 0: M11 = value; break;
++					case 1: M12 = value; break;
++					case 2: M13 = value; break;
++					case 3: M14 = value; break;
++					case 4: M21 = value; break;
++					case 5: M22 = value; break;
++					case 6: M23 = value; break;
++					case 7: M24 = value; break;
++					case 8: M31 = value; break;
++					case 9: M32 = value; break;
++					case 10: M33 = value; break;
++					case 11: M34 = value; break;
++					case 12: M41 = value; break;
++					case 13: M42 = value; break;
++					case 14: M43 = value; break;
++					case 15: M44 = value; break;
++					default: throw new ArgumentOutOfRangeException("index");
++				}
++			}
++		}
++
++		public float this[int row, int column]
++		{
++			get
++			{
++				return this[(row * 4) + column];
++			}
++			set
++			{
++				this[(row * 4) + column] = value;
++			}
++		}
++
++		public static float[] ToFloatArray(Matrix matrix)
++		{
++			return new float[] { matrix.M11, matrix.M12, matrix.M13, matrix.M14, matrix.M21, matrix.M22, matrix.M23, matrix.M24, matrix.M31, matrix.M32, matrix.M33, matrix.M34, matrix.M41, matrix.M42, matrix.M43, matrix.M44 };
++		}
++
++		public static Matrix CreateOrthographicOffCenter(Rectangle viewingVolume, float zNearPlane, float zFarPlane)
++		{
++			return CreateOrthographicOffCenter(viewingVolume.Left, viewingVolume.Right, viewingVolume.Bottom, viewingVolume.Top, zNearPlane, zFarPlane);
++		}
++
++		public static Matrix CreatePerspectiveOffCenter(Rectangle viewingVolume, float nearPlaneDistance, float farPlaneDistance)
++		{
++			return CreatePerspectiveOffCenter(viewingVolume.Left, viewingVolume.Right, viewingVolume.Bottom, viewingVolume.Top, nearPlaneDistance, farPlaneDistance);
++		}
++
+ 		#endregion
+ 
+ 		#region Public Methods
 diff --git a/src/Point.cs b/src/Point.cs
-index 1f1d6b8..d74f8f6 100644
+index 1f1d6b8..86dc4e5 100644
 --- a/src/Point.cs
 +++ b/src/Point.cs
-@@ -93,10 +93,21 @@ namespace Microsoft.Xna.Framework
+@@ -93,10 +93,27 @@ namespace Microsoft.Xna.Framework
  			this.Y = y;
  		}
  
@@ -837,6 +1500,12 @@ index 1f1d6b8..d74f8f6 100644
 +			return new Vector2(X, Y);
 +		}
 +
++		public void Deconstruct(out int x, out int y)
++		{
++			x = X;
++			y = Y;
++		}
++
  		/// <summary>
  		/// Compares whether current instance is equal to specified <see cref="Point"/>.
  		/// </summary>
@@ -850,8 +1519,40 @@ index 4bd9930..17d7e6f 100644
  //
 -[assembly: AssemblyVersion("23.10.0.0")]
 +[assembly: AssemblyVersion("3.8.0.1641")]
+diff --git a/src/Quaternion.cs b/src/Quaternion.cs
+index be95924..7b302da 100644
+--- a/src/Quaternion.cs
++++ b/src/Quaternion.cs
+@@ -127,6 +127,27 @@ namespace Microsoft.Xna.Framework
+ 			this.W = scalarPart;
+ 		}
+ 
++		public Quaternion(Vector4 value)
++		{
++			this.X = value.X;
++			this.Y = value.Y;
++			this.Z = value.Z;
++			this.W = value.W;
++		}
++
++		public Vector4 ToVector4()
++		{
++			return new Vector4(X, Y, Z, W);
++		}
++
++		public void Deconstruct(out float x, out float y, out float z, out float w)
++		{
++			x = X;
++			y = Y;
++			z = Z;
++			w = W;
++		}
++
+ 		#endregion
+ 
+ 		#region Public Methods
 diff --git a/src/Rectangle.cs b/src/Rectangle.cs
-index a6186ca..ba0f698 100644
+index a6186ca..9f0661c 100644
 --- a/src/Rectangle.cs
 +++ b/src/Rectangle.cs
 @@ -91,6 +91,19 @@ namespace Microsoft.Xna.Framework
@@ -874,7 +1575,7 @@ index a6186ca..ba0f698 100644
  		/// <summary>
  		/// A <see cref="Point"/> located in the center of this <see cref="Rectangle"/>'s bounds.
  		/// </summary>
-@@ -206,10 +219,36 @@ namespace Microsoft.Xna.Framework
+@@ -206,10 +219,64 @@ namespace Microsoft.Xna.Framework
  			Height = height;
  		}
  
@@ -906,6 +1607,34 @@ index a6186ca..ba0f698 100644
 +		public void Contains(ref Vector2 value, out bool result)
 +		{
 +			result = Contains(value.X, value.Y);
++		}
++
++		public void Deconstruct(out int x, out int y, out int width, out int height)
++		{
++			x = X;
++			y = Y;
++			width = Width;
++			height = Height;
++		}
++
++		public void Inflate(float horizontalAmount, float verticalAmount)
++		{
++			X -= (int) horizontalAmount;
++			Y -= (int) verticalAmount;
++			Width += (int) horizontalAmount * 2;
++			Height += (int) verticalAmount * 2;
++		}
++
++		public void Offset(float offsetX, float offsetY)
++		{
++			X += (int) offsetX;
++			Y += (int) offsetY;
++		}
++
++		public void Offset(Vector2 amount)
++		{
++			X += (int) amount.X;
++			Y += (int) amount.Y;
 +		}
 +
  		/// <summary>
@@ -968,16 +1697,242 @@ index 8776e86..f538fb4 100644
  
  		#endregion
 diff --git a/src/Vector2.cs b/src/Vector2.cs
-index 733e803..55f7fb4 100644
+index 733e803..d15d860 100644
 --- a/src/Vector2.cs
 +++ b/src/Vector2.cs
-@@ -144,6 +144,11 @@ namespace Microsoft.Xna.Framework
+@@ -144,6 +144,75 @@ namespace Microsoft.Xna.Framework
  
  		#region Public Methods
  
++		public void Ceiling()
++		{
++			X = MathF.Ceiling(X);
++			Y = MathF.Ceiling(Y);
++		}
++
++		public static Vector2 Ceiling(Vector2 value)
++		{
++			return new Vector2(MathF.Ceiling(value.X), MathF.Ceiling(value.Y));
++		}
++
++		public static void Ceiling(ref Vector2 value, out Vector2 result)
++		{
++			result = new Vector2(MathF.Ceiling(value.X), MathF.Ceiling(value.Y));
++		}
++
++		public void Floor()
++		{
++			X = MathF.Floor(X);
++			Y = MathF.Floor(Y);
++		}
++
++		public static Vector2 Floor(Vector2 value)
++		{
++			return new Vector2(MathF.Floor(value.X), MathF.Floor(value.Y));
++		}
++
++		public static void Floor(ref Vector2 value, out Vector2 result)
++		{
++			result = new Vector2(MathF.Floor(value.X), MathF.Floor(value.Y));
++		}
++
++		public void Round()
++		{
++			X = MathF.Round(X);
++			Y = MathF.Round(Y);
++		}
++
++		public static Vector2 Round(Vector2 value)
++		{
++			return new Vector2(MathF.Round(value.X), MathF.Round(value.Y));
++		}
++
++		public static void Round(ref Vector2 value, out Vector2 result)
++		{
++			result = new Vector2(MathF.Round(value.X), MathF.Round(value.Y));
++		}
++
++		public void Deconstruct(out float x, out float y)
++		{
++			x = X;
++			y = Y;
++		}
++
++		public static Vector2 LerpPrecise(Vector2 value1, Vector2 value2, float amount)
++		{
++			return new Vector2(MathHelper.LerpPrecise(value1.X, value2.X, amount), MathHelper.LerpPrecise(value1.Y, value2.Y, amount));
++		}
++
++		public static void LerpPrecise(ref Vector2 value1, ref Vector2 value2, float amount, out Vector2 result)
++		{
++			result = LerpPrecise(value1, value2, amount);
++		}
++
 +		public Point ToPoint()
 +		{
 +			return new Point((int) X, (int) Y);
++		}
++
+ 		/// <summary>
+ 		/// Compares whether current instance is equal to specified <see cref="Object"/>.
+ 		/// </summary>
+diff --git a/src/Vector3.cs b/src/Vector3.cs
+index 32d5292..e5608d5 100644
+--- a/src/Vector3.cs
++++ b/src/Vector3.cs
+@@ -249,6 +249,74 @@ namespace Microsoft.Xna.Framework
+ 
+ 		#region Public Methods
+ 
++		public void Ceiling()
++		{
++			X = MathF.Ceiling(X);
++			Y = MathF.Ceiling(Y);
++			Z = MathF.Ceiling(Z);
++		}
++
++		public static Vector3 Ceiling(Vector3 value)
++		{
++			return new Vector3(MathF.Ceiling(value.X), MathF.Ceiling(value.Y), MathF.Ceiling(value.Z));
++		}
++
++		public static void Ceiling(ref Vector3 value, out Vector3 result)
++		{
++			result = new Vector3(MathF.Ceiling(value.X), MathF.Ceiling(value.Y), MathF.Ceiling(value.Z));
++		}
++
++		public void Floor()
++		{
++			X = MathF.Floor(X);
++			Y = MathF.Floor(Y);
++			Z = MathF.Floor(Z);
++		}
++
++		public static Vector3 Floor(Vector3 value)
++		{
++			return new Vector3(MathF.Floor(value.X), MathF.Floor(value.Y), MathF.Floor(value.Z));
++		}
++
++		public static void Floor(ref Vector3 value, out Vector3 result)
++		{
++			result = new Vector3(MathF.Floor(value.X), MathF.Floor(value.Y), MathF.Floor(value.Z));
++		}
++
++		public void Round()
++		{
++			X = MathF.Round(X);
++			Y = MathF.Round(Y);
++			Z = MathF.Round(Z);
++		}
++
++		public static Vector3 Round(Vector3 value)
++		{
++			return new Vector3(MathF.Round(value.X), MathF.Round(value.Y), MathF.Round(value.Z));
++		}
++
++		public static void Round(ref Vector3 value, out Vector3 result)
++		{
++			result = new Vector3(MathF.Round(value.X), MathF.Round(value.Y), MathF.Round(value.Z));
++		}
++
++		public void Deconstruct(out float x, out float y, out float z)
++		{
++			x = X;
++			y = Y;
++			z = Z;
++		}
++
++		public static Vector3 LerpPrecise(Vector3 value1, Vector3 value2, float amount)
++		{
++			return new Vector3(MathHelper.LerpPrecise(value1.X, value2.X, amount), MathHelper.LerpPrecise(value1.Y, value2.Y, amount), MathHelper.LerpPrecise(value1.Z, value2.Z, amount));
++		}
++
++		public static void LerpPrecise(ref Vector3 value1, ref Vector3 value2, float amount, out Vector3 result)
++		{
++			result = LerpPrecise(value1, value2, amount);
++		}
++
+ 		/// <summary>
+ 		/// Compares whether current instance is equal to specified <see cref="Object"/>.
+ 		/// </summary>
+diff --git a/src/Vector4.cs b/src/Vector4.cs
+index 2fd86c2..c47ff6c 100644
+--- a/src/Vector4.cs
++++ b/src/Vector4.cs
+@@ -212,6 +212,78 @@ namespace Microsoft.Xna.Framework
+ 
+ 		#region Public Methods
+ 
++		public void Ceiling()
++		{
++			X = MathF.Ceiling(X);
++			Y = MathF.Ceiling(Y);
++			Z = MathF.Ceiling(Z);
++			W = MathF.Ceiling(W);
++		}
++
++		public static Vector4 Ceiling(Vector4 value)
++		{
++			return new Vector4(MathF.Ceiling(value.X), MathF.Ceiling(value.Y), MathF.Ceiling(value.Z), MathF.Ceiling(value.W));
++		}
++
++		public static void Ceiling(ref Vector4 value, out Vector4 result)
++		{
++			result = new Vector4(MathF.Ceiling(value.X), MathF.Ceiling(value.Y), MathF.Ceiling(value.Z), MathF.Ceiling(value.W));
++		}
++
++		public void Floor()
++		{
++			X = MathF.Floor(X);
++			Y = MathF.Floor(Y);
++			Z = MathF.Floor(Z);
++			W = MathF.Floor(W);
++		}
++
++		public static Vector4 Floor(Vector4 value)
++		{
++			return new Vector4(MathF.Floor(value.X), MathF.Floor(value.Y), MathF.Floor(value.Z), MathF.Floor(value.W));
++		}
++
++		public static void Floor(ref Vector4 value, out Vector4 result)
++		{
++			result = new Vector4(MathF.Floor(value.X), MathF.Floor(value.Y), MathF.Floor(value.Z), MathF.Floor(value.W));
++		}
++
++		public void Round()
++		{
++			X = MathF.Round(X);
++			Y = MathF.Round(Y);
++			Z = MathF.Round(Z);
++			W = MathF.Round(W);
++		}
++
++		public static Vector4 Round(Vector4 value)
++		{
++			return new Vector4(MathF.Round(value.X), MathF.Round(value.Y), MathF.Round(value.Z), MathF.Round(value.W));
++		}
++
++		public static void Round(ref Vector4 value, out Vector4 result)
++		{
++			result = new Vector4(MathF.Round(value.X), MathF.Round(value.Y), MathF.Round(value.Z), MathF.Round(value.W));
++		}
++
++		public void Deconstruct(out float x, out float y, out float z, out float w)
++		{
++			x = X;
++			y = Y;
++			z = Z;
++			w = W;
++		}
++
++		public static Vector4 LerpPrecise(Vector4 value1, Vector4 value2, float amount)
++		{
++			return new Vector4(MathHelper.LerpPrecise(value1.X, value2.X, amount), MathHelper.LerpPrecise(value1.Y, value2.Y, amount), MathHelper.LerpPrecise(value1.Z, value2.Z, amount), MathHelper.LerpPrecise(value1.W, value2.W, amount));
++		}
++
++		public static void LerpPrecise(ref Vector4 value1, ref Vector4 value2, float amount, out Vector4 result)
++		{
++			result = LerpPrecise(value1, value2, amount);
 +		}
 +
  		/// <summary>
