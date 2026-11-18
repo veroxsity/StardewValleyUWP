@@ -1,7 +1,7 @@
 {
     "Name": "Xbox Paths",
     "Author": "BanditVault",
-    "Version": "1.1.0",
+    "Version": "1.2.0",
     "Description": "Anchors the game's data paths to an absolute root and decodes png through FNA, because an app container has neither a real AppData folder nor libSkiaSharp.",
     "UniqueID": "BanditVault.XboxPaths",
     "EntryDll": "XboxPaths.dll",

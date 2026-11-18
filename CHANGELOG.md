@@ -2,6 +2,7 @@
 
 ## 0.1.21.0, 2026-11-18
 
+- Saved games show up again with SpaceCore installed. SpaceCore patches the save list, which let the game skip the Xbox save folder fix, so the load screen said there were no saves even though they were all there.
 - Json Assets loads again. It was the last mod in the test log still refused for a missing texture method.
 - Filled in the rest of the everyday MonoGame API mods use that FNA didn't have: rounding and lerp helpers on vectors, more colour, rectangle and matrix helpers, keyboard caps and num lock, gamepad calls by player number and settable game time. Mods calling these used to be refused with "no longer compatible".
 - Tractor Mod and UI Info Suite 2 still don't load, they need Stardew's own sound cue classes.
